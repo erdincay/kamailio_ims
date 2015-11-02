@@ -25,4 +25,4 @@
 # accepts 'yes' and 'no' and only in lowercase letters.
 # On some systems it is necessary to specify a directory for the core files
 # to get a dump. Look into the kamailio init file for an example configuration.
-#DUMP_CORE=yes
+DUMP_CORE=yes
