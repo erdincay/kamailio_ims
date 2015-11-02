@@ -95,8 +95,8 @@ int I_perform_user_authorization_request(struct sip_msg* msg, char* route, char*
         return -1;
     }
 
-    /*This should be configurable and not hardwired to RURI domain*/
-    realm = cscf_get_realm_from_ruri(msg);
+	/*This should be configurable and not hardwired to RURI domain*/
+    //realm = cscf_get_realm_from_ruri(msg);
 
     //check if we received what we should, we do this even though it should be done in cfg file - double checking!
     if (msg->first_line.type != SIP_REQUEST) {
