@@ -442,6 +442,7 @@ int dlg_set_leg_info(struct dlg_cell *dlg, str* tag, str *rr, str *contact,
                         dlg_out->callee_contact.s = (char*) shm_malloc(contact->len);
                         if (!dlg_out->callee_contact.s) {
                             LM_ERR("no more shm mem\n");
+							lock_release(dlg->dlg_out_entries_lock);
                             return -1; //if we're out of mem we dont really care about cleaning up - prob going to crash anyway
                         }
                         dlg_out->callee_contact.len = contact->len;
@@ -451,6 +452,7 @@ int dlg_set_leg_info(struct dlg_cell *dlg, str* tag, str *rr, str *contact,
                         dlg_out->callee_route_set.s = (char*) shm_malloc(rr->len);
                         if (!dlg_out->callee_route_set.s) {
                             LM_ERR("no more shm mem\n");
+							lock_release(dlg->dlg_out_entries_lock);
                             return -1; //if we're out of mem we dont really care about cleaning up - prob going to crash anyway
                         }
                         dlg_out->callee_route_set.len = rr->len;
@@ -461,6 +463,7 @@ int dlg_set_leg_info(struct dlg_cell *dlg, str* tag, str *rr, str *contact,
                         dlg_out->caller_cseq.s = (char*) shm_malloc(cseq->len);
                         if (!dlg_out->callee_cseq.s || !dlg_out->caller_cseq.s) {
                             LM_ERR("no more shm mem\n");
+							lock_release(dlg->dlg_out_entries_lock);
                             return -1; //if we're out of mem we dont really care about cleaning up - prob going to crash anyway
                         }
                         dlg_out->caller_cseq.len = cseq->len;
@@ -1097,32 +1100,16 @@ void next_state_dlg(struct dlg_cell *dlg, int event,
     struct dlg_cell_out *dlg_out;
     dlg_out = d_entry_out->first;
     int found = -1;
-    int delete = 1;
+	int delete = 1;
 
     switch (event) {
         case DLG_EVENT_TDEL:
             switch (dlg->state) {
                 case DLG_STATE_UNCONFIRMED:
                 case DLG_STATE_EARLY:
-//		    if (to_tag) {
-//                        LM_DBG("Going to check if there is another active branch - we only change state to DELETED if there are no other active branches\n");
-//                        while (dlg_out) {
-//                            if (dlg_out->to_tag.len == to_tag->len && memcmp(dlg_out->to_tag.s, to_tag->s, dlg_out->to_tag.len) == 0) {
-//                                dlg_out->deleted=1;
-//                            } else {
-//                                if (dlg_out->deleted != 1) {
-//                                    LM_DBG("Found a dlg_out (to-tag: [%.*s]) that is not for this event and is not in state deleted, therefore there is another active branch\n", to_tag->len, to_tag->s);
-//                                    delete = 0;
-//                                }
-//                            }
-//                            dlg_out = dlg_out->next;
-//                        }
-//                    }
-                    if (delete) {
-                        dlg->state = DLG_STATE_DELETED;
-                        unref_dlg_unsafe(dlg, 1, d_entry);
-                        *unref = 1;
-                    }
+					dlg->state = DLG_STATE_DELETED;
+					//                        unref_dlg_unsafe(dlg, 1, d_entry);
+					*unref = 1;
                     break;
                 case DLG_STATE_CONFIRMED:
                 case DLG_STATE_CONFIRMED_NA:
@@ -1149,10 +1136,10 @@ void next_state_dlg(struct dlg_cell *dlg, int event,
             switch (dlg->state) {
                 case DLG_STATE_UNCONFIRMED:
                 case DLG_STATE_EARLY:
-		    if(delete) {
-			dlg->state = DLG_STATE_DELETED;
-			*unref = 1;
-		    }
+					if(delete) {
+						dlg->state = DLG_STATE_DELETED;
+						*unref = 1;
+					}
                     break;
                 default:
                     log_next_state_dlg(event, dlg);

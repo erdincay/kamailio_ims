@@ -357,17 +357,17 @@ static void dlg_terminated(struct sip_msg* req,
     /* dialog terminated (BYE) */
     run_dlg_callbacks(DLGCB_TERMINATED, dlg, req, NULL, dir, 0);
 
-    /* register callback for the coresponding reply */
-    LM_DBG("Registering tmcb1\n");
-    if (d_tmb.register_tmcb(req,
-            0,
-            TMCB_RESPONSE_OUT,
-            dlg_terminated_confirmed,
-            (void*) dlg,
-            0) <= 0) {
-        LM_ERR("cannot register response callback for BYE request\n");
-        return;
-    }
+//    /* register callback for the coresponding reply */
+//    LM_DBG("Registering tmcb1\n");
+//    if (d_tmb.register_tmcb(req,
+//            0,
+//            TMCB_RESPONSE_OUT,
+//            dlg_terminated_confirmed,
+//            (void*) dlg,
+//            0) <= 0) {
+//        LM_ERR("cannot register response callback for BYE request\n");
+//        return;
+//    }
 }
 
 /*!
@@ -1280,7 +1280,7 @@ void dlg_onreply(struct cell* t, int type, struct tmcb_params *param) {
 
             to_tag = get_to(rpl)->tag_value;
             if (to_tag.s == 0 || to_tag.len == 0) {
-                LM_ERR("missing TAG param in TO hdr :-/\n");
+                LM_DBG("missing TAG param in TO hdr :-/ - probably a failure response\n");
                 to_tag.s = 0;
                 to_tag.len = 0;
                 //Here we assume that the transaction module timer will remove any early dialogs
