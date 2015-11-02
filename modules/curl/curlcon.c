@@ -71,8 +71,6 @@ curl_con_t* curl_get_connection(str *name)
 	cc = _curl_con_root;
 	while(cc)
 	{
-		LM_DBG("---> curl_get_connection comparing with curlcon: [%.*s]\n", cc->name.len, cc->name.s);
-		LM_DBG("---> curl_get_connection comparing conid %u with cc->conid %u \n", conid, cc->conid);
 		if(conid==cc->conid && cc->name.len==name->len && strncmp(cc->name.s, name->s, name->len)==0) {
 			return cc;
 		}
@@ -241,8 +239,6 @@ int curl_parse_param(char *val)
 	if (*p == ';') {
 		/* We have parameters */
 		str tok;
-		int_str ival;
-		int itype;
 		param_t *pit = NULL;
 
 		/* Adjust the URL length */

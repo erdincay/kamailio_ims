@@ -83,10 +83,6 @@ unsigned int	default_maxdatasize = 0;		/*!< Default download size. 0=disabled */
 
 static curl_version_info_data *curl_info;
 
-/* lock for configuration access */
-static gen_lock_t *conf_lock = NULL;
-
-
 /* Module management function prototypes */
 static int mod_init(void);
 static int child_init(int);
@@ -389,7 +385,8 @@ static int fixup_curl_connect(void** param, int param_no)
 
 /*
  * Fix curl_connect params when posting (5 parameters): 
- *	connection (string/pvar), url (string with pvars), content-type, data (string/pvar, pvar
+ *	connection (string/pvar), url (string with pvars), content-type, 
+ *      data (string/pvar, pvar)
  */
 static int fixup_curl_connect_post(void** param, int param_no)
 {
@@ -397,12 +394,12 @@ static int fixup_curl_connect_post(void** param, int param_no)
     str s;
     pv_elem_t *pv = NULL;
 
-    if (param_no == 1 || param_no == 2 || param_no == 3) {
+    if (param_no == 1 || param_no == 3) {
 	/* We want char * strings */
-	/* At some point we need to allow pvars in the string. */
 	return 0;
 	}
-    if (param_no == 4) {
+    /* URL and data may contain pvar */
+    if (param_no == 4 || param_no == 2) {
         s.s = (char*)(*param);
         s.len = strlen(s.s);
 
@@ -570,7 +567,6 @@ static int pv_get_curlerror(struct sip_msg *msg, pv_param_t *param, pv_value_t *
 {
 	str curlerr;
 	char *err = NULL;
-	CURLcode codeerr;
 
 	if(param==NULL) {
 		return -1;
@@ -597,7 +593,6 @@ static int pv_get_curlerror(struct sip_msg *msg, pv_param_t *param, pv_value_t *
  */
 static int pv_parse_curlredirect(pv_spec_p sp, str *in)
 {
-	int cerr  = 0;
 	if(sp==NULL || in==NULL || in->len<=0) {
 		return -1;
 	}

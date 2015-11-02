@@ -60,26 +60,26 @@ static int curL_query_url(struct sip_msg* _m, char* _url, char* _dst, const char
  */
 size_t write_function( void *ptr, size_t size, size_t nmemb, void *stream_ptr)
 {
-    /* A question here is if we can somehow signal maxdatasize and stop filling
-	buffers at maxdatasize - we don't need any more. Or just ignore and stop
-	allocating pkg memory at that point. A good todo.
-     */
-    http_res_stream_t *stream = (http_res_stream_t *) stream_ptr;
+    curl_res_stream_t *stream = (curl_res_stream_t *) stream_ptr;
 
-    stream->buf = (char *) pkg_realloc(stream->buf, stream->curr_size + 
-				(size * nmemb) + 1);
 
-    if (stream->buf == NULL) {
-	LM_ERR("cannot allocate memory for stream\n");
-	return CURLE_WRITE_ERROR;
+    if (stream->max_size == 0 || stream->curr_size < stream->max_size) {
+    	stream->buf = (char *) pkg_realloc(stream->buf, stream->curr_size + (size * nmemb) + 1);
+
+    	if (stream->buf == NULL) {
+		LM_ERR("cannot allocate memory for stream\n");
+		return CURLE_WRITE_ERROR;
+    	}
+
+    	memcpy(&stream->buf[stream->pos], (char *) ptr, (size * nmemb));
+
+    	stream->curr_size += ((size * nmemb) + 1);
+    	stream->pos += (size * nmemb);
+
+    	stream->buf[stream->pos + 1] = '\0';
+    }  else {
+    	LM_DBG("****** ##### CURL Max datasize exceeded: max  %u current %u\n", (unsigned int) stream->max_size, (unsigned int)stream->curr_size);
     }
-
-    memcpy(&stream->buf[stream->pos], (char *) ptr, (size * nmemb));
-
-    stream->curr_size += ((size * nmemb) + 1);
-    stream->pos += (size * nmemb);
-
-    stream->buf[stream->pos + 1] = '\0';
 
     return size * nmemb;
  }
@@ -92,8 +92,8 @@ static int curL_query_url(struct sip_msg* _m, char* _url, char* _dst, const char
     CURL *curl;
     CURLcode res;  
     str value;
-    char *url, *at = NULL, *post;
-    http_res_stream_t stream;
+    char *url, *at = NULL;
+    curl_res_stream_t stream;
     long stat;
     pv_spec_t *dst;
     pv_value_t val;
@@ -101,7 +101,8 @@ static int curL_query_url(struct sip_msg* _m, char* _url, char* _dst, const char
     double total_time;
     struct curl_slist *headerlist = NULL;
 
-    memset(&stream, 0, sizeof(http_res_stream_t));
+    memset(&stream, 0, sizeof(curl_res_stream_t));
+    stream.max_size = (size_t) maxdatasize;
 
     value.s = _url;
     value.len = strlen(_url);
@@ -172,6 +173,9 @@ static int curL_query_url(struct sip_msg* _m, char* _url, char* _dst, const char
    	res = curl_easy_perform(curl);  
     }
     pkg_free(url);
+    if (headerlist) {
+    	curl_slist_free_all(headerlist);
+    }
 
     if (res != CURLE_OK) {
 	/* http://curl.haxx.se/libcurl/c/libcurl-errors.html */
@@ -183,7 +187,6 @@ static int curL_query_url(struct sip_msg* _m, char* _url, char* _dst, const char
 		LM_ERR("failed to perform curl (%d)\n", res);
 	}
 
-	curl_slist_free_all(headerlist);
 	curl_easy_cleanup(curl);
 	if(stream.buf) {
 		pkg_free(stream.buf);
@@ -246,9 +249,6 @@ static int curL_query_url(struct sip_msg* _m, char* _url, char* _dst, const char
     }
 	
     /* CURLcode curl_easy_getinfo(CURL *curl, CURLINFO info, ... ); */
-    if (headerlist) {
-    	curl_slist_free_all(headerlist);
-    }
     curl_easy_cleanup(curl);
     pkg_free(stream.buf);
     return stat;
@@ -264,7 +264,9 @@ int curl_con_query_url(struct sip_msg* _m, char *connection, char* _url, char* _
 	char passwordbuf[BUFSIZ/2];
 	char connurlbuf[BUFSIZ/2];
 	char urlbuf[512];
-	unsigned int len = 0;
+	str urlbuf2;
+	char *urlbuf3 = NULL;
+
 	str postdatabuf;
 	char *postdata = NULL;
 	unsigned int maxdatasize = default_maxdatasize;
@@ -292,9 +294,41 @@ int curl_con_query_url(struct sip_msg* _m, char *connection, char* _url, char* _
 	strncpy(passwordbuf, conn->password.s, conn->password.len);
 	strncpy(connurlbuf, conn->url.s, conn->url.len);
 
-	strncpy(urlbuf,conn->schema.s, conn->schema.len);
-	snprintf(&urlbuf[conn->schema.len],(sizeof(urlbuf) - conn->schema.len), "://%s%s%s", connurlbuf, 
-		(_url[0] && _url[0] == '/')?"":(_url[0] != '\0' ? "/": ""), _url);
+	LM_DBG("******** CURL Connection found %s\n", connection);
+
+	if (_url && *_url) {
+		if(pv_printf_s(_m, (pv_elem_t*) _url, &urlbuf2) != 0) {
+               		LM_ERR("curl :: unable to handle post data %s\n", _url);
+               		return -1;
+        	}
+        	if(urlbuf2.s==NULL || urlbuf2.len == 0) {
+               		LM_ERR("curl :: invalid url parameter\n");
+               		return -1;
+        	}
+		LM_DBG("******** CURL Connection URL parsed for  %s\n", connection);
+		/* Allocated using pkg_memory */
+		urlbuf3 = as_asciiz(&urlbuf2);
+		if (urlbuf3  == NULL) {
+       			ERR("Curl: No memory left\n");
+          		return -1;
+        	}
+		LM_DBG("******** CURL URL string after PV parsing %s\n", urlbuf3);
+	} else {
+		LM_DBG("******** CURL URL string NULL no PV parsing %s\n", _url);
+	}
+	strncpy(urlbuf, conn->schema.s, conn->schema.len);
+	if (urlbuf3 != NULL) {
+		snprintf(&urlbuf[conn->schema.len],(sizeof(urlbuf) - conn->schema.len), "://%s%s%s", connurlbuf, 
+			(urlbuf3[0] && urlbuf3[0] == '/')?"":(urlbuf3[0] != '\0' ? "/": ""), urlbuf3);
+	} else {
+		snprintf(&urlbuf[conn->schema.len],(sizeof(urlbuf) - conn->schema.len), "://%s%s%s", connurlbuf, 
+			(_url[0] && _url[0] == '/')?"":(_url[0] != '\0' ? "/": ""), _url);
+	}
+
+	/* Release the memory allocated by as_asciiz */
+	if (urlbuf3 != NULL) {
+		pkg_free(urlbuf3);
+	}
 	LM_DBG("***** #### ***** CURL URL: %s \n", urlbuf);
 	if (_post && *_post) {
 		 if(pv_printf_s(_m, (pv_elem_t*)_post, &postdatabuf) != 0) {
@@ -319,6 +353,7 @@ int curl_con_query_url(struct sip_msg* _m, char *connection, char* _url, char* _
 	res = curL_query_url(_m, urlbuf, _result, usernamebuf, passwordbuf, (contenttype ? contenttype : "text/plain"), postdata,
 		conn->timeout, conn->http_follow_redirect, 0, (unsigned int) maxdatasize );
 
+	LM_DBG("***** #### ***** CURL DONE : %s \n", urlbuf);
 	if (postdata != NULL) {
 		pkg_free(postdata);
 	}
